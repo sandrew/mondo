@@ -20,16 +20,17 @@ alias UpdateFlags = mongoc_update_flags_t;
 alias ErrorCodes     = mongoc_error_code_t;
 alias ErrorDomains   = mongoc_error_domain_t;
 alias ReadMode       = mongoc_read_mode_t;
+alias BulkOperation  = mongoc_bulk_operation_t;
 
 // Can you insert your custom struct/class into db?
-// YOURTYPE.bson must return a BsonObject 
+// YOURTYPE.bson must return a BsonObject
 private enum canExportBson(T) = __traits(compiles, { void tmp(in BsonObject obj) { } const obj = T.init; tmp(obj.bson); } );
 
 /// An error triggered by mongo.
 class MongoException : Exception
 {
-   this(in ErrorDomains domain, in ErrorCodes code, in string message = "") 
-   { 
+   this(in ErrorDomains domain, in ErrorCodes code, in string message = "")
+   {
       this.code = code;
       this.domain = domain;
       this.message = message;
@@ -40,8 +41,8 @@ class MongoException : Exception
    {
       this
       (
-         cast(ErrorDomains)err.domain, 
-         cast(ErrorCodes)err.code, 
+         cast(ErrorDomains)err.domain,
+         cast(ErrorCodes)err.code,
          cast(string)(err.message)
       );
    }
@@ -88,7 +89,7 @@ class ReadConcern
 
    @property level() { return to!string(mongoc_read_concern_get_level(_readConcern)); }
    @property level(in string level) { mongoc_read_concern_set_level(_readConcern, level.toStringz); }
-   
+
    private mongoc_read_concern_t *_readConcern;
 }
 
@@ -97,7 +98,7 @@ class ReadConcern
 class ReadPrefs
 {
    private this(const(mongoc_read_prefs_t) *readprefs) { _readPrefs = mongoc_read_prefs_copy(readprefs); }
-   
+
    this() { _readPrefs = null; /*mongoc_read_prefs_new();*/ }
    ~this() { mongoc_read_prefs_destroy(_readPrefs); }
 
@@ -154,7 +155,7 @@ class Query
    private template DeclareChainingProperty(string name, T)
    {
       enum MangledProperty = "_" ~ name;
-      enum DeclareChainingProperty = 
+      enum DeclareChainingProperty =
          "@property auto ref " ~ name ~ "() inout { return " ~ MangledProperty ~ ";}\n" ~
          "@property auto ref " ~ name ~ "(" ~ T.stringof ~ " val) { " ~ MangledProperty ~ " = val; return this;} ";
    }
@@ -162,7 +163,7 @@ class Query
    private template DeclareQueryField(string T)
    {
       enum var = "_" ~ T;
-      enum DeclareQueryField = 
+      enum DeclareQueryField =
          "@property auto ref " ~ T ~ "() inout { return " ~ var ~ "; }\n" ~
          "@property auto ref " ~ T ~ "(BsonObject b) { " ~ var ~ " = b; return this; }\n" ~
          "@property has" ~ toUpper(T[0..1]) ~ T[1..$] ~ "() const { return !" ~ var ~ ".empty; }\n";
@@ -197,9 +198,9 @@ class Query
       bool   _explain = false;
       int    _skip   = 0;
       int    _limit   = 0;
-      
+
       string  _comment;
-      
+
       bool   _returnKey   = false;
       bool   _snapshot   = false;
       bool   _showDiskLoc = false;
@@ -209,16 +210,16 @@ class Query
 /// Class to manage connection pools. It should be thread safe.
 class MongoPool
 {
-   this(in string connectionString) 
-   { 
+   this(in string connectionString)
+   {
       _uri = mongoc_uri_new (connectionString.toStringz);
 
       if (_uri is null)
          throw new Exception("Invalid db uri");
 
       _pool = mongoc_client_pool_new(_uri);
-      garbage.addChild(new RefCountTree("uri", RefCountTree.Type.uri_t, _uri)); 
-      garbageIdx[_uri].addChild(new RefCountTree("pool", RefCountTree.Type.pool_t, _pool)); 
+      garbage.addChild(new RefCountTree("uri", RefCountTree.Type.uri_t, _uri));
+      garbageIdx[_uri].addChild(new RefCountTree("pool", RefCountTree.Type.pool_t, _pool));
    }
 
    ~this()
@@ -228,7 +229,7 @@ class MongoPool
    }
 
    // Get a connection from a pool. It will be recycled when returned class will be destroyed.
-   Mongo pop() 
+   Mongo pop()
    {
       return new Mongo(this);
    }
@@ -236,7 +237,7 @@ class MongoPool
    @property sslOptions(SslOptions opt) { mongoc_client_pool_set_ssl_opts(_pool, opt.sslOptions); }
    @property max(in uint maxSize) { mongoc_client_pool_max_size(_pool, maxSize); }
    @property min(in uint minSize) { mongoc_client_pool_max_size(_pool, minSize); }
-   
+
    private mongoc_client_pool_t* _pool  = null;
    private mongoc_uri_t*         _uri   = null;
 }
@@ -251,30 +252,30 @@ unittest
 
 // LogFunction used by class MongoLogger
 alias LogFunction = void delegate(LogLevel, in string, in string);
-   
+
 /// Simple way to catch mongo log using a callback
 class MongoLogger
 {
-   
-   private static extern(C) void logRedirector(mongoc_log_level_t level, const(char)* domain, const(char)* message, void*) 
+
+   private static extern(C) void logRedirector(mongoc_log_level_t level, const(char)* domain, const(char)* message, void*)
    {
       string sDomain = to!string(domain);
       string sMessage = to!string(message);
-     
+
       foreach(logger; _loggers)
-       logger(level, sDomain, sMessage); 
+       logger(level, sDomain, sMessage);
    }
-   
+
    static this()
    {
-      mongoc_log_set_handler(&logRedirector, null); 
+      mongoc_log_set_handler(&logRedirector, null);
    }
 
    static removeAll() { _loggers = null; }
-   
+
    /// Add a new callback
    static void addLogger(LogFunction f)      {  _loggers[f] = f;  }
-   
+
    /// Remove a previously added callback
    static void removeLogger(LogFunction f)   { _loggers.remove(f); }
 
@@ -283,7 +284,7 @@ class MongoLogger
 
 unittest
 {
-   string[] log; 
+   string[] log;
    MongoLogger.addLogger((LogLevel ll, in string logDomain, in string message) { log ~= message; });
    mongoc_log(mongoc_log_level_t.LEVEL_ERROR, "test", "asd");
    assert(log.length > 0);
@@ -294,20 +295,20 @@ unittest
 class Mongo
 {
 
-   /** 
-    * Create main mongo class and start connection 
-    * 
+   /**
+    * Create main mongo class and start connection
+    *
     * Params:
-    *  connectionString Mongo connection string 
-    * 
+    *  connectionString Mongo connection string
+    *
     * Example:
     * -----
     * auto mongo = new Mongo("mongodb://localhost");
     * auto db = mongo["my_database"];
     * -----
     */
-   this(in string connectionString) 
-   { 
+   this(in string connectionString)
+   {
       _client = mongoc_client_new(connectionString.toStringz);
 
       if (_client is null)
@@ -317,7 +318,7 @@ class Mongo
       _pool = null;
 
       initBsonCtx();
-      
+
       garbage.addChild(new RefCountTree("mongo", RefCountTree.type.client_t, _client));
    }
 
@@ -333,14 +334,14 @@ class Mongo
       _inited = true;
 
       initBsonCtx();
-      
+
       garbageIdx[_pool].addChild(new RefCountTree("pool_client", RefCountTree.type.pool_client_t, _client));
    }
 
-   ~this() 
-   {  
-      if(_bson_ctx) bson_context_destroy(_bson_ctx); 
-      
+   ~this()
+   {
+      if(_bson_ctx) bson_context_destroy(_bson_ctx);
+
       if (_inited && _client)
       {
          garbageIdx[_client].canBeDestroyed();
@@ -349,7 +350,7 @@ class Mongo
       _pool = null;
       _client = null;
    }
-   
+
    private void initBsonCtx() { _bson_ctx = bson_context_get_default(); }
 
    /// It generate a new Bson OID. OIDs are UUID.
@@ -357,7 +358,7 @@ class Mongo
    {
       bson_oid_t tmp;
       bson_oid_init(&tmp, _bson_ctx);
-     
+
       return ObjectId(cast(ubyte[])tmp.bytes);
    }
 
@@ -366,28 +367,28 @@ class Mongo
       Mongo m = new Mongo("mongodb://localhost");
       assert(m.generateObjectId.length == 12);
    }
-  
+
 
    /// Global writeConcern settings.
-   @property WriteConcern writeConcern() { return new WriteConcern(mongoc_client_get_write_concern(_client)); }  
+   @property WriteConcern writeConcern() { return new WriteConcern(mongoc_client_get_write_concern(_client)); }
    @property void writeConcern(WriteConcern wc) { mongoc_client_set_write_concern(_client, wc._writeConcern); } /// ditto
 
    /// Global readConcern settings.
-   @property ReadConcern readConcern() { return new ReadConcern(mongoc_client_get_read_concern(_client)); }  
+   @property ReadConcern readConcern() { return new ReadConcern(mongoc_client_get_read_concern(_client)); }
    @property void readConcern(ReadConcern rc) { mongoc_client_set_read_concern(_client, rc._readConcern); } /// ditto
 
    /// Global readPrefs settings.
-   @property ReadPrefs readPrefs() { return new ReadPrefs(mongoc_client_get_read_prefs(_client)); }  
+   @property ReadPrefs readPrefs() { return new ReadPrefs(mongoc_client_get_read_prefs(_client)); }
    @property void readPrefs(ReadPrefs rp) { mongoc_client_set_read_prefs(_client, rp._readPrefs); } /// ditto
 
    @property sslOptions(SslOptions opt) { mongoc_client_set_ssl_opts(_client, opt.sslOptions); }
-   
+
    /// Hey are we connected?
-   @property connected() 
-   { 
-      if (!_inited || _client == null) 
+   @property connected()
+   {
+      if (!_inited || _client == null)
          return false;
-      
+
       bson_t reply;
 
       scope(exit) bson_destroy(&reply);
@@ -401,43 +402,43 @@ class Mongo
 
    /// Returns db status
    @property status()
-   { 
+   {
       bson_t reply;
       bson_error_t error;
-     
+
       scope(exit) bson_destroy(&reply);
       mixin(MongoReadPrefsMixin);
-     
+
       auto copy = mongoc_read_prefs_copy(prefs);
       scope(exit) mongoc_read_prefs_destroy(copy);
-     
+
       bool result = mongoc_client_get_server_status(_client, copy, &reply, &error);
-     
+
       auto response = BsonObject(bson_get_data(&reply));
 
       if (!result)
        throw new MongoException(error);
-     
+
       return response;
    }
-   
+
    unittest
    {
       import std.exception;
-      
+
       {
          Mongo m = new Mongo("mongodb://localhost");
          assert(m.connected == true);
          assertNotThrown(m.status);
       }
-      
+
       {
          Mongo m = new Mongo("mongodb://localhostasd");
          assert(m.connected == false);
          assertThrown(m.status);
       }
    }
-   
+
    Db opIndex(in string db) { return new Db(this, db); }
    Db opDispatch(string db)() { return opIndex(db); }
 
@@ -449,16 +450,16 @@ class Mongo
       mixin(MongoWrapErrorMixin!"(strv = mongoc_client_get_database_names (_client, &error)) == null");
       for(size_t i = 0; strv[i]; ++i)
          dbNames ~= to!string(strv[i]);
-      
+
       bson_strfreev(strv);
       return dbNames;
    }
-   
+
    unittest
    {
       assert((new Mongo("mongodb://localhost")).dbs.length > 0);
    }
-   
+
    private bool                     _inited = false;
    private MongoPool                _mongoPool;
    private mongoc_client_pool_t*    _pool   = null;
@@ -473,12 +474,12 @@ class Mongo
 class Db
 {
    // You can't build this directly, sorry. Use Mongo m = ...;  Db db = m["your_db"];
-   private this(Mongo mongo, in string db)   
-   { 
-      _mongo = mongo; 
-      _name = db; 
+   private this(Mongo mongo, in string db)
+   {
+      _mongo = mongo;
+      _name = db;
       _db = mongoc_client_get_database(_mongo._client, _name.toStringz);
-      
+
       garbageIdx[_mongo._client].addChild(new RefCountTree("db", RefCountTree.Type.db_t, _db));
    }
 
@@ -487,8 +488,8 @@ class Db
    /**
     * Run a command on db
     */
-   BsonObject runCommand(in BsonObject command, in ReadPrefs readPrefs = null)            
-   { 
+   BsonObject runCommand(in BsonObject command, in ReadPrefs readPrefs = null)
+   {
       bson_t bson_reply;
       mixin(MongoReadPrefsMixin);
       mixin(BsonInitMixin!command);
@@ -497,8 +498,8 @@ class Db
    }
 
    Collection opIndex(in string collection) { return new Collection(_mongo, this, collection); }
-   Collection opDispatch(string s)() 
-   { 
+   Collection opDispatch(string s)()
+   {
       return opIndex(s);
    }
 
@@ -513,30 +514,30 @@ class Db
       mixin(MongoWrapErrorMixin!"(strv = mongoc_database_get_collection_names (_db, &error)) == null");
       for(size_t i = 0; strv[i]; ++i)
          collectionsNames ~= to!string(strv[i]);
-      
+
       bson_strfreev(strv);
       return collectionsNames;
    }
-   
+
    /// Check if collection exists on this db
-   public bool hasCollection(in string name) 
-   { 
+   public bool hasCollection(in string name)
+   {
       bson_error_t error;
-      return mongoc_database_has_collection(_db, name.toStringz, &error) != 0; 
+      return mongoc_database_has_collection(_db, name.toStringz, &error) != 0;
    }
 
-   @property WriteConcern writeConcern() { return new WriteConcern(mongoc_database_get_write_concern(_db)); }  
+   @property WriteConcern writeConcern() { return new WriteConcern(mongoc_database_get_write_concern(_db)); }
    @property void writeConcern(WriteConcern wc) { mongoc_database_set_write_concern(_db, wc._writeConcern); }
-   
-   @property ReadConcern readConcern() { return new ReadConcern(mongoc_database_get_read_concern(_db)); }  
+
+   @property ReadConcern readConcern() { return new ReadConcern(mongoc_database_get_read_concern(_db)); }
    @property void readConcern(ReadConcern rc) { mongoc_database_set_read_concern(_db, rc._readConcern); } /// ditto
-   
-   @property ReadPrefs readPrefs() { return new ReadPrefs(mongoc_database_get_read_prefs(_db)); }  
+
+   @property ReadPrefs readPrefs() { return new ReadPrefs(mongoc_database_get_read_prefs(_db)); }
    @property void readPrefs(ReadPrefs rp) { mongoc_database_set_read_prefs(_db, rp._readPrefs); }
 
    /// Return db name
    @property name()      { return _name; }
-    
+
    /// Return a ref to its own db
    @property mongo()     { return _mongo; }
 
@@ -550,27 +551,27 @@ class Db
  */
 class Collection
 {
-   private this(Mongo mongo,  Db db, in string collection) 
-   { 
-      _mongo = mongo; 
-      _name = collection; 
-      _db = db; 
+   private this(Mongo mongo,  Db db, in string collection)
+   {
+      _mongo = mongo;
+      _name = collection;
+      _db = db;
       _collection = mongoc_client_get_collection(_mongo._client, _db.name.toStringz, collection.toStringz);
       garbageIdx[_db._db].addChild(new RefCountTree("collection", RefCountTree.Type.collection_t, _collection));
    }
 
    ~this() { garbageIdx[_collection].canBeDestroyed(); }
 
-   /// Does this collection exist? 
+   /// Does this collection exist?
    public bool exists() { return _db.hasCollection(_name); }
-   
+
    /// Perform a simple distinct command on collection
    public auto distinct(in string field)
    {
       return _db.runCommand(BO("distinct", name, "key", field))["values"].as!BsonArray;
    }
-   
-   /// Update or upsert (check UpdateFlags!) multiple/single objects (again check UpdateFlags) that satisfy selector conditions. 
+
+   /// Update or upsert (check UpdateFlags!) multiple/single objects (again check UpdateFlags) that satisfy selector conditions.
    public void update(in BsonObject selector, in BsonObject update, in UpdateFlags flags = UpdateFlags.NONE, in WriteConcern writeConcern = null)
    {
       mixin(MongoWriteConcernMixin);
@@ -593,7 +594,7 @@ class Collection
       static if (!canExportBson!T)  static assert(false, "save!" ~ T.stringof ~ "(...) works only if `const(" ~ T.stringof ~").bson` is a BsonObject.");
       else save(document.bson, writeConcern);
    }
-   
+
    /// Save a BsonObject into Db
    public void save(in BsonObject document, in WriteConcern writeConcern = null)
    {
@@ -601,14 +602,14 @@ class Collection
       mixin(BsonInitMixin!document);
       mixin(MongoWrapErrorMixin!"mongoc_collection_save(_collection, &bson_document, wc, &error) == 0");
    }
-   
+
    /// Insert an object into db. Every struct or class is good if I can call `yourVariable.bson` and it returns a BsonObject
    public void insert(T)(in T document, in InsertFlags flags = InsertFlags.NONE, in WriteConcern writeConcern = null) if (!(isInputRange!T))
    {
       static if (!canExportBson!T)  static assert(false, "insert!" ~ T.stringof ~ "(...) works only if `const(" ~ T.stringof ~").bson` is a BsonObject.");
       else insert(document.bson, flags, writeConcern);
    }
-   
+
    /// Insert a BsonObject into Db
    public void insert(in BsonObject document, in InsertFlags flags = InsertFlags.NONE, in WriteConcern writeConcern = null)
    {
@@ -621,12 +622,12 @@ class Collection
    public void insert(Range)(Range documentsRange, in InsertFlags flags = InsertFlags.NONE, in WriteConcern writeConcern = null) if (isInputRange!Range && !is(ElementType!Range == BsonObject))
    {
       static if (!canExportBson!(ElementType!Range)) static assert(false, "insert(Range...) works only if const(ElementType!Range).bson is a BsonObject.");
-      else 
+      else
       {
          insert(documentsRange.map!(x => x.bson), flags, writeConcern);
       }
    }
-   
+
    /// Insert a range of bsonobjects into db.
    public void insert(Range)(Range documentsRange, in InsertFlags flags = InsertFlags.NONE, in WriteConcern writeConcern = null) if (isInputRange!Range && is(ElementType!Range == BsonObject))
    {
@@ -663,18 +664,18 @@ class Collection
    {
       mixin(MongoWrapErrorMixin!"mongoc_collection_drop(_collection, &error) == 0");
    }
-   
+
    /// Return a (lazy) range holding query results. find!T works if T(BsonObject()) or new T(BsonObject()) works too.
-   public auto find(T = BsonObject)(in Query query = Query.init, in QueryFlags flags = QueryFlags.NONE, in ReadPrefs readPrefs = null) 
+   public auto find(T = BsonObject)(in Query query = Query.init, in QueryFlags flags = QueryFlags.NONE, in ReadPrefs readPrefs = null)
    {
       return findImpl!(T, false)(query, flags, readPrefs);
    }
 
    /// Return first result of find!T(...)
-   public T findOne(T = BsonObject)(in Query query = Query.init, in QueryFlags flags = QueryFlags.NONE, in ReadPrefs readPrefs = null) 
+   public T findOne(T = BsonObject)(in Query query = Query.init, in QueryFlags flags = QueryFlags.NONE, in ReadPrefs readPrefs = null)
    {
       static if (!(is(T == BsonObject) || isBsonContainer!T)) static assert(false, "findOne!T(...) works only if `T(BsonObject())` or `new T(BsonObject())` works.");
-      else 
+      else
       {
          auto cursor = findImpl!(T, true)(query, flags, readPrefs);
 
@@ -690,7 +691,7 @@ class Collection
    private auto findImpl(T = BsonObject, bool justOne = false)(in Query query, in QueryFlags flags = QueryFlags.NONE, in ReadPrefs readPrefs = null)
    {
       static if (!(is(T == BsonObject) || isBsonContainer!T)) static assert(false, "findOne!" ~ T.stringof ~ "(...) / find!" ~ T.stringof ~ "(...) works only if `"~ T.stringof ~"(BsonObject())` or `new " ~ T.stringof ~ "(BsonObject())` work.");
-      else 
+      else
       {
          mixin(MongoReadPrefsMixin);
 
@@ -745,25 +746,25 @@ class Collection
          mongoc_collection_aggregate(_collection, flags, &bson_aggregate, &bson_options, prefs),
          flags
       );
-      
+
       return ret;
    }
 
-   @property WriteConcern writeConcern() { return new WriteConcern(mongoc_collection_get_write_concern(_collection)); }  
+   @property WriteConcern writeConcern() { return new WriteConcern(mongoc_collection_get_write_concern(_collection)); }
    @property void writeConcern(WriteConcern wc) { mongoc_collection_set_write_concern(_collection, wc._writeConcern); }
-     
-   @property ReadConcern readConcern() { return new ReadConcern(mongoc_collection_get_read_concern(_collection)); }  
+
+   @property ReadConcern readConcern() { return new ReadConcern(mongoc_collection_get_read_concern(_collection)); }
    @property void readConcern(ReadConcern rc) { mongoc_collection_set_read_concern(_collection, rc._readConcern); } /// ditto
-   
-   @property ReadPrefs readPrefs() { return new ReadPrefs(mongoc_collection_get_read_prefs(_collection)); }  
+
+   @property ReadPrefs readPrefs() { return new ReadPrefs(mongoc_collection_get_read_prefs(_collection)); }
    @property void readPrefs(ReadPrefs rp) { mongoc_collection_set_read_prefs(_collection, rp._readPrefs); }
 
    /// What's your name, collection?
    @property name()      { return _name; }
-   
+
    // A reference to parent db
    @property db()        { return _db; }
-   
+
    private Db                 _db;
    private Mongo              _mongo;
    private string             _name;
@@ -775,21 +776,21 @@ class Collection
 struct Cursor(T = BsonObject) if (is(T == BsonObject) || isBsonContainer!T)
 {
    private __gshared size_t[mongoc_cursor_t*] cursorReference;
-   
+
    private class IncrLock { }
    private __gshared IncrLock lock;
-   
+
    shared static this() { lock = new IncrLock; }
-   
-   private this(mongoc_collection_t* collection, mongoc_cursor_t* cursor, QueryFlags flags = QueryFlags.NONE) 
-   { 
+
+   private this(mongoc_collection_t* collection, mongoc_cursor_t* cursor, QueryFlags flags = QueryFlags.NONE)
+   {
       _collection  = collection;
-      _cursor = cursor;  
+      _cursor = cursor;
       _flags = flags;
-      
+
       synchronized(lock)
       {
-         if (_cursor !in cursorReference) 
+         if (_cursor !in cursorReference)
          {
             garbageIdx[_collection].addChild(new RefCountTree("cursor", RefCountTree.Type.cursor_t, _cursor));
             cursorReference[_cursor] = 1;
@@ -797,14 +798,14 @@ struct Cursor(T = BsonObject) if (is(T == BsonObject) || isBsonContainer!T)
          else cursorReference[_cursor]++;
       }
    }
-   
+
    public this(this)
    {
       synchronized(lock)
          cursorReference[this._cursor]++;
    }
-   
-   ~this() 
+
+   ~this()
    {
       synchronized(lock)
       {
@@ -831,8 +832,8 @@ struct Cursor(T = BsonObject) if (is(T == BsonObject) || isBsonContainer!T)
 
       return true;
    }
-   
-   @property T front() 
+
+   @property T front()
    {
       tryInit();
 
@@ -846,15 +847,15 @@ struct Cursor(T = BsonObject) if (is(T == BsonObject) || isBsonContainer!T)
       else static assert(false, text("Can't read a ", T.stringof, " object from mongo. You should define a ctor that accepts a BsonObject as param."));
 
    }
-   
+
    void popFront()
    {
       tryInit();
       next();
    }
-   
-   @property empty() 
-   {  
+
+   @property empty()
+   {
       tryInit();
 
       if (_empty && (_flags & QueryFlags.TAILABLE_CURSOR) == QueryFlags.TAILABLE_CURSOR)
@@ -863,7 +864,7 @@ struct Cursor(T = BsonObject) if (is(T == BsonObject) || isBsonContainer!T)
       return _empty;
    }
 
-   
+
    private mongoc_cursor_t*   _cursor  = null;
    private bson_t*            _current = null;
    private bool               _inited  = false;
@@ -873,28 +874,28 @@ struct Cursor(T = BsonObject) if (is(T == BsonObject) || isBsonContainer!T)
    private QueryFlags   _flags;
 }
 
-private template BsonInitMixin(alias T)
+public template BsonInitMixin(alias T)
 {
    enum object_name = T.stringof;
    enum bson_t_name = "bson_" ~ object_name;
-   enum BsonInitMixin = 
+   enum BsonInitMixin =
       "bson_t " ~ bson_t_name ~ "; " ~
       "bson_init_from_array(&" ~ bson_t_name ~ ", " ~ object_name ~ ".exportData());" ~
       "scope(exit) { bson_destroy(&" ~ bson_t_name ~ "); }";
-   
+
 }
 
 
 private enum MongoWrapErrorMixin(string T)  = "bson_error_t error; if (" ~ T ~ ") throw new MongoException(error);";
 private enum MongoReadPrefsMixin         = "const mongoc_read_prefs_t *prefs = (readPrefs is null)?null:readPrefs._readPrefs;";
 private enum MongoWriteConcernMixin       = "const mongoc_write_concern_t *wc = (writeConcern is null)?null:writeConcern._writeConcern;";
-      
 
-private bson_t* bson_from_array(in ubyte[] data) 
+
+private bson_t* bson_from_array(in ubyte[] data)
 in     { assert(data.length <= int.max, "Too much data for bson"); }
 body   { return bson_new_from_data(data.ptr, data.length); }
 
-private bool bson_init_from_array(bson_t* bson, in ubyte[] data) 
+public bool bson_init_from_array(bson_t* bson, in ubyte[] data)
 in     { assert(data.length <= int.max, "Too much data for bson"); }
 body   { return bson_init_static(bson, data.ptr, cast(int)data.length) != 0; }
 
@@ -912,27 +913,27 @@ private class RefCountTree
       collection_t,
       cursor_t
    }
-   
+
    this(string id, Type type, void* address = null)
    {
       this.id = id;
       this.type = type;
       this.address = address;
       garbageIdx[this.address] = this;
-      
+
       // debug { writeln("Build ", id, " with address ", address); }
    }
-   
+
    bool tryDestroy()
    {
       if (children.length > 0 || (this.address == null && this.type != Type.root)  || !toDestroy)
       {
          // debug { writeln("TryDestroy ", id, " with address ", address, " fail. toDestroy: ", toDestroy, " children.lenght:", children.length); }
-         return false; 
-      } 
-      
+         return false;
+      }
+
       // debug { writeln("Destroying ", id, " with address ", address); }
-      
+
       final switch(type)
       {
          case Type.pool_t: mongoc_client_pool_destroy(cast(mongoc_client_pool_t*)address); break;
@@ -944,43 +945,43 @@ private class RefCountTree
          case Type.collection_t: mongoc_collection_destroy(cast(mongoc_collection_t*)address); break;
          case Type.root: mongoc_cleanup(); break;
       }
-      
+
       assert(parent !is null || type == Type.root);
-      
+
       if (parent)
          parent.removeChild(this);
-      
+
       return true;
    }
-   
+
    bool canBeDestroyed()
    {
       // debug { writeln("Marked destroyable ", id, " with address ", address); }
       toDestroy = true;
       return tryDestroy();
    }
-   
+
    void addChild(RefCountTree mi)
    {
        // debug { writeln("Add child to: ", id, " with address ", address, " child ", mi.id, " with address ", mi.address); }
       children[mi.address] = mi;
       mi.parent = this;
    }
-   
+
    bool removeChild(RefCountTree mi)
    {
       // debug {writeln("Removing child from: ", id, " with address ", address, " child ", mi.id, " with address ", mi.address); }
       children.remove(mi.address);
       return tryDestroy();
    }
-   
+
    bool                 toDestroy = false;
    void*                address = null;
    Type                 type;
    RefCountTree         parent = null;
-   RefCountTree[void*]  children;  
-   
-   string id; 
+   RefCountTree[void*]  children;
+
+   string id;
 }
 
 private static __gshared RefCountTree[void*] garbageIdx;
@@ -989,10 +990,10 @@ private static __gshared RefCountTree garbage;
 shared static this()
 {
    mongoc_init();
-   garbage = new RefCountTree("root", RefCountTree.Type.root, null); 
-} 
+   garbage = new RefCountTree("root", RefCountTree.Type.root, null);
+}
 
 shared static ~this()
-{ 
+{
    garbage.canBeDestroyed();
 }
